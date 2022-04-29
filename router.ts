@@ -191,24 +191,21 @@ export class Router extends DiscordInteractions {
     });
   }
 
-  /** Verify whether the request is coming from Discord. */
+  /** 
+   * Verify whether the request is coming from Discord. 
+   * When the request's signature is not valid, we return a 401 and this is
+   * important as Discord sends invalid requests to test our verification.
+   */
   async #validate(request: Request): Promise<{ error?: string; status?: number; body?: string }> {
-    // validateRequest() ensures that a request is of POST method and
-    // has the following headers.
-    // const { error } = await validateRequest(request, {
-    //   POST: {
-    //     headers: ["X-Signature-Ed25519", "X-Signature-Timestamp"],
-    //   },
-    // });
-    // if (error) {
-    //   return { error: error.message, status: error.status, };
-    // }
-
-    // Verify whether the request is coming from Discord.
-    // When the request's signature is not valid, we return a 401 and this is
-    // important as Discord sends invalid requests to test our verification.
     const signature = request.headers.get("X-Signature-Ed25519")!;
     const timestamp = request.headers.get("X-Signature-Timestamp")!;
+    if (!signature) {
+      return { error: `header X-Signature-Ed25519 not available`, status: 400, };
+    }
+    if (!timestamp) {
+      return { error: `header X-Signature-Timestamp not available`, status: 400, };
+    }
+    
     const body = await request.text();
 
     const valid = nacl.sign.detached.verify(
