@@ -1,15 +1,10 @@
 import {
   serve,
   ConnInfo,
-} from "https://deno.land/std@0.136.0/http/server.ts";
+  router,
 
-import { router } from "https://crux.land/router@0.0.11";
+  sign,
 
-// TweetNaCl is a cryptography library that we use to verify requests
-// from Discord.
-import nacl from "https://cdn.skypack.dev/tweetnacl@v1.0.3?dts";
-
-import {
   Snowflake,
   PartialApplicationCommand,
   ApplicationCommand,
@@ -19,7 +14,7 @@ import {
   InteractionType,
   ApplicationCommandInteractionData,
   InteractionResponseType,
-} from "https://deno.land/x/discord_slash_commands@1.0.6/src/structures/index.ts";
+} from "./deps.ts";
 
 const DISCORD_BASE_URL = "https://discord.com/api/v9";
 
@@ -315,7 +310,7 @@ export class Router {
 
     const body = await request.text();
 
-    const valid = nacl.sign.detached.verify(
+    const valid = sign.detached.verify(
       new TextEncoder().encode(timestamp + body),
       hexToUint8Array(signature),
       hexToUint8Array(this.#publicKey),
