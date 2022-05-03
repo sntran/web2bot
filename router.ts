@@ -69,13 +69,13 @@ export class Router {
       Object.defineProperty(handler, "name", { value: route, });
 
       const url = new URL(route, "https://example.com");
+      // Provides a HTTP route for each commands.
+      // Note: searchParams are ignored.
+      routes[url.pathname] = handler;
       // Creates application command from the route.
       const command = this.commandFromUri(url);
       if (command) {
         commands.push(command);
-        // Provides a HTTP route for each commands.
-        // Note: searchParams are ignored.
-        routes[url.pathname] = handler;
         // Keeps a mapping between command name and route handler.
         commandMap[command.name] = handler;
       }
@@ -151,7 +151,7 @@ export class Router {
   async bulkOverwriteGuildApplicationCommands(
     partials: PartialApplicationCommand[],
     guildId?: Snowflake,
-  ) {
+  ): Promise<ApplicationCommand[]> {
     const endpoint = guildId
     ? `applications/${ this.#applicationId }/guilds/${ guildId }/commands`
     : `applications/${ this.#applicationId }/commands`;
@@ -167,21 +167,6 @@ export class Router {
     });
 
     const commands = await response.json() as ApplicationCommand[];
-
-    // Deletes application commands when process exits.
-    globalThis.addEventListener("unload", async (_event: Event): Promise<void> => {
-      for await (const command of commands) {
-        const commandId = command.id;
-        const endpoint = guildId
-        ? `applications/${ this.#applicationId }/guilds/${ guildId }/commands/${ commandId }`
-        : `applications/${ this.#applicationId }/commands/${ commandId }`;
-
-        fetch(endpoint, {
-          method: "DELETE",
-          headers,
-        });
-      }
-    });
 
     return commands;
   }
