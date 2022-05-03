@@ -1,10 +1,6 @@
-export {
-  serve,
-} from "https://deno.land/std@0.136.0/http/server.ts";
+export { serve } from "https://deno.land/std@0.136.0/http/server.ts";
 
-export type {
-  ConnInfo
-} from "https://deno.land/std@0.136.0/http/server.ts";
+export type { ConnInfo } from "https://deno.land/std@0.136.0/http/server.ts";
 
 export { router } from "https://crux.land/router@0.0.11";
 
@@ -14,15 +10,15 @@ export { sign } from "https://cdn.skypack.dev/tweetnacl@v1.0.3?dts";
 
 export {
   ApplicationCommandOptionType,
-  InteractionType,
   InteractionResponseType,
+  InteractionType,
 } from "https://deno.land/x/discord_slash_commands@1.0.6/src/structures/index.ts";
 
 export type {
-  Snowflake,
-  PartialApplicationCommand,
   ApplicationCommand,
+  ApplicationCommandInteractionData,
   ApplicationCommandOption,
   Interaction,
-  ApplicationCommandInteractionData,
+  PartialApplicationCommand,
+  Snowflake,
 } from "https://deno.land/x/discord_slash_commands@1.0.6/src/structures/index.ts";

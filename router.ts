@@ -1,19 +1,17 @@
 import {
-  serve,
-  ConnInfo,
-  router,
-
-  sign,
-
-  Snowflake,
-  PartialApplicationCommand,
   ApplicationCommand,
+  ApplicationCommandInteractionData,
   ApplicationCommandOption,
   ApplicationCommandOptionType,
+  ConnInfo,
   Interaction,
-  InteractionType,
-  ApplicationCommandInteractionData,
   InteractionResponseType,
+  InteractionType,
+  PartialApplicationCommand,
+  router,
+  serve,
+  sign,
+  Snowflake,
 } from "./deps.ts";
 
 const DISCORD_BASE_URL = "https://discord.com/api/v9";
@@ -33,15 +31,16 @@ export class Router {
   #tokenPrefix: string;
   #commands: Record<string, Handler>;
 
-  constructor(options: {
-    applicationId?: Snowflake;
-    publicKey?: Snowflake;
-    authToken?: string;
-    tokenPrefix?: string;
-    endpoint?: string;
-    guildId?: Snowflake;
-  } & Record<string, Handler>) {
-
+  constructor(
+    options: {
+      applicationId?: Snowflake;
+      publicKey?: Snowflake;
+      authToken?: string;
+      tokenPrefix?: string;
+      endpoint?: string;
+      guildId?: Snowflake;
+    } & Record<string, Handler>,
+  ) {
     const {
       applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
       publicKey = Deno.env.get("DISCORD_PUBLIC_KEY") || "",
@@ -57,16 +56,16 @@ export class Router {
     this.#authToken = authToken;
     this.#tokenPrefix = (tokenPrefix || "Bot") + " ";
 
-    const routes: Record<string, Handler>  = {
+    const routes: Record<string, Handler> = {
       [endpoint]: this.#handleInteraction.bind(this) as Handler,
-    }
+    };
 
     const commands: PartialApplicationCommand[] = [];
     const commandMap: Record<string, Handler> = {};
 
     for (const [route, handler] of Object.entries(userRoutes)) {
       // Ensures the handler's name is the route.
-      Object.defineProperty(handler, "name", { value: route, });
+      Object.defineProperty(handler, "name", { value: route });
 
       const url = new URL(route, "https://example.com");
       // Provides a HTTP route for each commands.
@@ -83,10 +82,12 @@ export class Router {
 
     this.#commands = commandMap;
 
-    this.bulkOverwriteGuildApplicationCommands(commands, guildId).then(_commands => {
-      // Serves HTTP endpoint for Discord to send payload to.
-      serve(router(routes));
-    });
+    this.bulkOverwriteGuildApplicationCommands(commands, guildId).then(
+      (_commands) => {
+        // Serves HTTP endpoint for Discord to send payload to.
+        serve(router(routes));
+      },
+    );
   }
 
   /**
@@ -94,12 +95,15 @@ export class Router {
    */
   commandFromUri(uri: string | URL): PartialApplicationCommand | null {
     /** @TODO: Uses decorators for description and option type? */
-    const { pathname, searchParams } = new URL(uri.toString(), "https://example.com");
+    const { pathname, searchParams } = new URL(
+      uri.toString(),
+      "https://example.com",
+    );
     /** @FIXME: Command name is not always the only one. */
     const [_, name, ...params] = pathname.split("/");
 
     if (!NAME_REGEX.test(name)) {
-      console.error(`Invalid command name: ${ name }`);
+      console.error(`Invalid command name: ${name}`);
       return null;
     }
 
@@ -107,7 +111,7 @@ export class Router {
     const options: ApplicationCommandOption[] = [];
 
     // Params are required options.
-    params.forEach(param => {
+    params.forEach((param) => {
       const name = param.substring(1);
       options.push({
         type: ApplicationCommandOptionType.STRING,
@@ -143,7 +147,7 @@ export class Router {
       name,
       description: name, /** @FIXME: Actual description */
       options,
-    }
+    };
 
     return command;
   }
@@ -153,14 +157,14 @@ export class Router {
     guildId?: Snowflake,
   ): Promise<ApplicationCommand[]> {
     const endpoint = guildId
-    ? `applications/${ this.#applicationId }/guilds/${ guildId }/commands`
-    : `applications/${ this.#applicationId }/commands`;
+      ? `applications/${this.#applicationId}/guilds/${guildId}/commands`
+      : `applications/${this.#applicationId}/commands`;
     const headers = {
-      "Authorization": `${ this.#tokenPrefix }${ this.#authToken }`,
+      "Authorization": `${this.#tokenPrefix}${this.#authToken}`,
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${ DISCORD_BASE_URL }/${ endpoint }`, {
+    const response = await fetch(`${DISCORD_BASE_URL}/${endpoint}`, {
       method: "PUT",
       headers,
       body: JSON.stringify(partials),
@@ -171,17 +175,23 @@ export class Router {
     return commands;
   }
 
-  async #handleInteraction(request: Request, connInfo: ConnInfo): Promise<Response> {
+  async #handleInteraction(
+    request: Request,
+    connInfo: ConnInfo,
+  ): Promise<Response> {
     const { error, status, body } = await this.#validate(request);
     if (error) {
-      return new Response(JSON.stringify({
-        error,
-      }), {
-        status,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
+      return new Response(
+        JSON.stringify({
+          error,
+        }),
+        {
+          status,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+          },
         },
-      });
+      );
     }
 
     const {
@@ -205,17 +215,20 @@ export class Router {
       // message,
       // locale,
       // guild_locale,
-     } = JSON.parse(body!) as Interaction;
+    } = JSON.parse(body!) as Interaction;
 
     // Discord performs Ping interactions to test our application.
     if (type === InteractionType.PING) {
-      return new Response(JSON.stringify({
-        type: InteractionResponseType.PONG
-      }), {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
+      return new Response(
+        JSON.stringify({
+          type: InteractionResponseType.PONG,
+        }),
+        {
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+          },
         },
-      });
+      );
     }
 
     if (type === InteractionType.APPLICATION_COMMAND) {
@@ -229,7 +242,7 @@ export class Router {
           components: [],
           attachments: [],
         },
-      }
+      };
 
       const handler = this.#commands[name];
       const route = handler.name; // User-defined route, i.e. `/hello/:name?age=`
@@ -251,9 +264,9 @@ export class Router {
 
       /** At this point, `options` contains only required params. */
       // @ts-ignore We know `option` has `value`
-      options!.forEach(({name, value}) => {
+      options!.forEach(({ name, value }) => {
         params[name] = value; /** Collects here to pass to handler. */
-        url.pathname = url.pathname.replace(`:${ name }`, value);
+        url.pathname = url.pathname.replace(`:${name}`, value);
       });
 
       const response = await handler(new Request(url.href), connInfo, params);
@@ -268,14 +281,17 @@ export class Router {
 
     // We will return a bad request error as a valid Discord request
     // shouldn't reach here.
-    return new Response(JSON.stringify({
-      error: "bad request",
-    }), {
-      status: 400,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
+    return new Response(
+      JSON.stringify({
+        error: "bad request",
+      }),
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
       },
-    });
+    );
   }
 
   /**
@@ -283,14 +299,19 @@ export class Router {
    * When the request's signature is not valid, we return a 401 and this is
    * important as Discord sends invalid requests to test our verification.
    */
-  async #validate(request: Request): Promise<{ error?: string; status?: number; body?: string }> {
+  async #validate(
+    request: Request,
+  ): Promise<{ error?: string; status?: number; body?: string }> {
     const signature = request.headers.get("X-Signature-Ed25519")!;
     const timestamp = request.headers.get("X-Signature-Timestamp")!;
     if (!signature) {
-      return { error: `header X-Signature-Ed25519 not available`, status: 400, };
+      return { error: `header X-Signature-Ed25519 not available`, status: 400 };
     }
     if (!timestamp) {
-      return { error: `header X-Signature-Timestamp not available`, status: 400, };
+      return {
+        error: `header X-Signature-Timestamp not available`,
+        status: 400,
+      };
     }
 
     const body = await request.text();
@@ -302,7 +323,7 @@ export class Router {
     );
 
     if (!valid) {
-      return { error: "Invalid request", status: 401, };
+      return { error: "Invalid request", status: 401 };
     }
 
     return { body };
