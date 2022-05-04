@@ -1,5 +1,4 @@
 import {
-  ApplicationCommand,
   ApplicationCommandInteractionData,
   ApplicationCommandOption,
   ApplicationCommandOptionType,
@@ -29,7 +28,8 @@ export class Router {
   #applicationId: Snowflake;
   #authToken: string;
   #tokenPrefix: string;
-  #commands: Record<string, Handler>;
+  #guildId: Snowflake;
+  #commands: PartialApplicationCommand[];
 
   constructor(
     options: {
@@ -39,6 +39,7 @@ export class Router {
       tokenPrefix?: string;
       endpoint?: string;
       guildId?: Snowflake;
+      serveOnly?: boolean;
     } & Record<string, Handler>,
   ) {
     const {
@@ -48,6 +49,7 @@ export class Router {
       tokenPrefix,
       endpoint = "/api/interactions",
       guildId = Deno.env.get("DISCORD_GUILD_ID"),
+      serveOnly = false,
       ...userRoutes
     } = options;
 
@@ -55,39 +57,39 @@ export class Router {
     this.#applicationId = applicationId;
     this.#authToken = authToken;
     this.#tokenPrefix = (tokenPrefix || "Bot") + " ";
+    this.#guildId = guildId || "";
 
-    const routes: Record<string, Handler> = {
-      [endpoint]: this.#handleInteraction.bind(this) as Handler,
-    };
-
-    const commands: PartialApplicationCommand[] = [];
-    const commandMap: Record<string, Handler> = {};
+    const commands = [];
 
     for (const [route, handler] of Object.entries(userRoutes)) {
       // Ensures the handler's name is the route.
       Object.defineProperty(handler, "name", { value: route });
 
       const url = new URL(route, "https://example.com");
-      // Provides a HTTP route for each commands.
-      // Note: searchParams are ignored.
-      routes[url.pathname] = handler;
       // Creates application command from the route.
       const command = this.commandFromUri(url);
       if (command) {
         commands.push(command);
-        // Keeps a mapping between command name and route handler.
-        commandMap[command.name] = handler;
+        // Stores the route handler as a property of this instance by command name.
+        Object.defineProperty(this, command.name, {
+          get() {
+            return handler;
+          },
+        });
       }
     }
 
-    this.#commands = commandMap;
+    this.#commands = commands;
 
-    this.bulkOverwriteGuildApplicationCommands(commands, guildId).then(
-      (_commands) => {
-        // Serves HTTP endpoint for Discord to send payload to.
-        serve(router(routes));
-      },
-    );
+    // Serves HTTP endpoint for Discord to send payload to.
+    serve(router({
+      [endpoint]: this.#handleInteraction.bind(this) as Handler,
+      ...userRoutes,
+    }));
+
+    if (!serveOnly) {
+      this.registerApplicationCommands(guildId);
+    }
   }
 
   /**
@@ -152,10 +154,11 @@ export class Router {
     return command;
   }
 
-  async bulkOverwriteGuildApplicationCommands(
-    partials: PartialApplicationCommand[],
-    guildId?: Snowflake,
-  ): Promise<ApplicationCommand[]> {
+  async registerApplicationCommands(
+    guildId: Snowflake = this.#guildId,
+  ): Promise<Response> {
+    const partials = this.#commands;
+
     const endpoint = guildId
       ? `applications/${this.#applicationId}/guilds/${guildId}/commands`
       : `applications/${this.#applicationId}/commands`;
@@ -170,9 +173,7 @@ export class Router {
       body: JSON.stringify(partials),
     });
 
-    const commands = await response.json() as ApplicationCommand[];
-
-    return commands;
+    return response;
   }
 
   async #handleInteraction(
@@ -244,7 +245,8 @@ export class Router {
         },
       };
 
-      const handler = this.#commands[name];
+      // @ts-ignore Instance has this property by command's name.
+      const handler = this[name];
       const route = handler.name; // User-defined route, i.e. `/hello/:name?age=`
 
       const params: Record<string, string> = {};
