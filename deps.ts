@@ -1,8 +1,4 @@
-export { serve } from "https://deno.land/std@0.136.0/http/server.ts";
-
-export type { ConnInfo } from "https://deno.land/std@0.136.0/http/server.ts";
-
-export { router } from "https://crux.land/router@0.0.11";
+export type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 
 // TweetNaCl is a cryptography library that we use to verify requests
 // from Discord.
@@ -12,7 +8,7 @@ export {
   ApplicationCommandOptionType,
   InteractionResponseType,
   InteractionType,
-} from "https://deno.land/x/discord_slash_commands@1.0.6/src/structures/index.ts";
+} from "https://deno.land/x/discord_slash_commands@1.0.8/src/structures/index.ts";
 
 export type {
   ApplicationCommand,
@@ -21,4 +17,4 @@ export type {
   Interaction,
   PartialApplicationCommand,
   Snowflake,
-} from "https://deno.land/x/discord_slash_commands@1.0.6/src/structures/index.ts";
+} from "https://deno.land/x/discord_slash_commands@1.0.8/src/structures/index.ts";

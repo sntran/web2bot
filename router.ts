@@ -7,15 +7,21 @@ import {
   InteractionResponseType,
   InteractionType,
   PartialApplicationCommand,
-  router,
-  serve,
   sign,
   Snowflake,
 } from "./deps.ts";
 
-const DISCORD_BASE_URL = "https://discord.com/api/v9";
+const DISCORD_BASE_URL = "https://discord.com/api/v10";
 
 const NAME_REGEX = /^[-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$/u;
+
+interface Message {
+  id?: Snowflake;
+  content: string;
+  embeds: never[];
+  components: never[];
+  attachments: never[];
+}
 
 export type Handler = (
   request: Request,
@@ -23,177 +29,125 @@ export type Handler = (
   params: Record<string, string>,
 ) => Response | Promise<Response>;
 
-export class Router {
-  #publicKey: Snowflake;
-  #applicationId: Snowflake;
-  #authToken: string;
-  #tokenPrefix: string;
-  #guildId: Snowflake;
-  #commands: PartialApplicationCommand[];
+interface Options {
+  applicationId?: Snowflake;
+  publicKey?: Snowflake;
+  authToken?: string;
+  tokenPrefix?: string;
+  guildId?: Snowflake;
+  endpoint?: string;
+  rateLimit?: number;
+  characterLimit?: number;
+  serveOnly?: boolean;
+}
 
-  constructor(
-    options: {
-      applicationId?: Snowflake;
-      publicKey?: Snowflake;
-      authToken?: string;
-      tokenPrefix?: string;
-      endpoint?: string;
-      guildId?: Snowflake;
-      serveOnly?: boolean;
-    } & Record<string, Handler>,
-  ) {
-    const {
-      applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
-      publicKey = Deno.env.get("DISCORD_PUBLIC_KEY") || "",
-      authToken = Deno.env.get("DISCORD_BOT_TOKEN") || "",
-      tokenPrefix,
-      endpoint = "/api/interactions",
-      guildId = Deno.env.get("DISCORD_GUILD_ID"),
-      serveOnly = false,
-      ...userRoutes
-    } = options;
+export function router(routes: Record<string, Handler>, options: Options = {}) {
+  const {
+    applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
+    publicKey = Deno.env.get("DISCORD_PUBLIC_KEY") || "",
+    authToken = Deno.env.get("DISCORD_BOT_TOKEN") || "",
+    tokenPrefix,
+    guildId = Deno.env.get("DISCORD_GUILD_ID"),
+    endpoint = "/",
+    rateLimit = 1000,
+    characterLimit = 2000,
+    serveOnly = false,
+  } = options;
 
-    this.#publicKey = publicKey;
-    this.#applicationId = applicationId;
-    this.#authToken = authToken;
-    this.#tokenPrefix = (tokenPrefix || "Bot") + " ";
-    this.#guildId = guildId || "";
+  const commands = [];
+  const handlers: Record<string, Handler> = {};
 
-    const commands = [];
+  for (const [route, handler] of Object.entries(routes)) {
+    // Ensures the handler's name is the route.
+    Object.defineProperty(handler, "name", { value: route });
 
-    for (const [route, handler] of Object.entries(userRoutes)) {
-      // Ensures the handler's name is the route.
-      Object.defineProperty(handler, "name", { value: route });
-
-      const url = new URL(route, "https://example.com");
-      // Creates application command from the route.
-      const command = this.commandFromUri(url);
-      if (command) {
-        commands.push(command);
-        // Stores the route handler as a property of this instance by command name.
-        Object.defineProperty(this, command.name, {
-          get() {
-            return handler;
-          },
-        });
-      }
-    }
-
-    this.#commands = commands;
-
-    // Serves HTTP endpoint for Discord to send payload to.
-    serve(router({
-      [endpoint]: this.#handleInteraction.bind(this) as Handler,
-      ...userRoutes,
-    }));
-
-    if (!serveOnly) {
-      this.registerApplicationCommands(guildId);
+    const url = new URL(route, "https://example.com");
+    // Creates application command from the route.
+    const command = commandFromUri(url);
+    if (command) {
+      commands.push(command);
+      // Stores the route handler as a property of this instance by command name.
+      handlers[command.name] = handler;
     }
   }
 
-  /**
-   * Creates a partial application command from route URL.
-   */
-  commandFromUri(uri: string | URL): PartialApplicationCommand | null {
-    /** @TODO: Uses decorators for description and option type? */
-    const { pathname, searchParams } = new URL(
-      uri.toString(),
-      "https://example.com",
-    );
-    /** @FIXME: Command name is not always the only one. */
-    const [_, name, ...params] = pathname.split("/");
-
-    if (!NAME_REGEX.test(name)) {
-      console.error(`Invalid command name: ${name}`);
-      return null;
-    }
-
-    // Required options must be listed before optional options.
-    const options: ApplicationCommandOption[] = [];
-
-    // Params are required options.
-    params.forEach((param) => {
-      const name = param.substring(1);
-      options.push({
-        type: ApplicationCommandOptionType.STRING,
-        name,
-        description: name, /** @FIXME: Actual description */
-        required: true,
-        choices: undefined,
-        // channel_types: undefined,
-        options: undefined,
-        // min_value: undefined,
-        // max_value: undefined,
-        // autocomplete: undefined,
-      });
-    });
-
-    // Search params are optional options.
-    searchParams.forEach((_defaultValue, name) => {
-      options.push({
-        type: ApplicationCommandOptionType.STRING,
-        name,
-        description: name, /** @FIXME: Actual description */
-        required: false,
-        choices: undefined,
-        // channel_types: undefined,
-        options: undefined,
-        // min_value: undefined,
-        // max_value: undefined,
-        // autocomplete: undefined,
-      });
-    });
-
-    const command: PartialApplicationCommand = {
-      name,
-      description: name, /** @FIXME: Actual description */
-      options,
-    };
-
-    return command;
-  }
-
-  async registerApplicationCommands(
-    guildId: Snowflake = this.#guildId,
-  ): Promise<Response> {
-    const partials = this.#commands;
-
+  if (!serveOnly) {
+    // Registers the application commands.
     const endpoint = guildId
-      ? `applications/${this.#applicationId}/guilds/${guildId}/commands`
-      : `applications/${this.#applicationId}/commands`;
+      ? `applications/${applicationId}/guilds/${guildId}/commands`
+      : `applications/${applicationId}/commands`;
     const headers = {
-      "Authorization": `${this.#tokenPrefix}${this.#authToken}`,
+      "Authorization": `${(tokenPrefix || "Bot")} ${authToken}`,
       "Content-Type": "application/json",
     };
 
-    const response = await fetch(`${DISCORD_BASE_URL}/${endpoint}`, {
+    fetch(`${DISCORD_BASE_URL}/${endpoint}`, {
       method: "PUT",
       headers,
-      body: JSON.stringify(partials),
+      body: JSON.stringify(commands),
+    }).then((response) => {
+      if (!response.ok) {
+        console.error(`Failed to register commands: ${response.statusText}`);
+      } else {
+        console.log("Registered commands");
+      }
     });
-
-    return response;
   }
 
-  async #handleInteraction(
+  /**
+   * Edits a response to an interaction.
+   * @param token Interaction token
+   * @param message The message to edit. If no ID is provided, the original response is edited.
+   */
+  function edit(token: string, message: Message) {
+    const {
+      id = "@original",
+      ...data
+    } = message;
+
+    return fetch(
+      `${DISCORD_BASE_URL}/webhooks/${applicationId}/${token}/messages/${id}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  return async function handleInteraction(
     request: Request,
     connInfo: ConnInfo,
   ): Promise<Response> {
-    const { error, status, body } = await this.#validate(request);
-    if (error) {
-      return new Response(
-        JSON.stringify({
-          error,
-        }),
-        {
-          status,
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-          },
-        },
-      );
+    //#region Request Validation
+    let status = 401;
+    if (request.method !== "POST") {
+      Response.json({ error: "Invalid Request" }, { status });
     }
+
+    const { pathname } = new URL(request.url);
+    if (pathname !== endpoint) {
+      return Response.json({ error: "Invalid Request" }, { status });
+    }
+
+    const signature = request.headers.get("X-Signature-Ed25519")!;
+    const timestamp = request.headers.get("X-Signature-Timestamp")!;
+    const body = await request.text();
+
+    const valid = sign.detached.verify(
+      new TextEncoder().encode(timestamp + body),
+      hexToUint8Array(signature),
+      hexToUint8Array(publicKey),
+    );
+
+    if (!valid) {
+      return Response.json({ error: "Invalid Request" }, { status });
+    }
+    //#endregion Request Validation
+
+    status = 200;
 
     const {
       // id,
@@ -211,7 +165,7 @@ export class Router {
       // channel_id,
       // member = { user: null },
       // user,
-      // token,
+      token,
       // version,
       // message,
       // locale,
@@ -220,49 +174,40 @@ export class Router {
 
     // Discord performs Ping interactions to test our application.
     if (type === InteractionType.PING) {
-      return new Response(
-        JSON.stringify({
-          type: InteractionResponseType.PONG,
-        }),
-        {
-          headers: {
-            "Content-Type": "application/json; charset=utf-8",
-          },
-        },
-      );
+      return Response.json({
+        type: InteractionResponseType.PONG,
+      });
     }
 
     if (type === InteractionType.APPLICATION_COMMAND) {
-      const reply = {
-        // Type 4 responds with the below message retaining the user's
-        // input at the top.
-        type: InteractionResponseType.CHANNEL_MESSAGE_WITH_SOURCE,
-        data: {
-          content: "",
-          embeds: [],
-          components: [],
-          attachments: [],
-        },
+      const message: Message = {
+        content: "",
+        embeds: [],
+        components: [],
+        attachments: [],
       };
 
       // @ts-ignore Instance has this property by command's name.
-      const handler = this[name];
+      const handler = handlers[name];
       const route = handler.name; // User-defined route, i.e. `/hello/:name?age=`
 
       const params: Record<string, string> = {};
       const url = new URL(route, request.url);
       const searchParams = url.searchParams;
 
+      let optionCount = options.length;
+
       /** Starts with optional options first, since we can check against `searchParams`. */
-      // @ts-ignore We know `option` has `value`
-      options!.forEach(({ name, value }, index) => {
+      while (optionCount--) {
+        // @ts-ignore We know `option` has `value`
+        const { name, value } = options[optionCount];
         /** Overrides the searchParam value with provided option value. */
         if (searchParams.has(name)) {
           searchParams.set(name, value);
           /** Removes this option from provided option list. */
-          options!.splice(index, 1);
+          options!.splice(optionCount, 1);
         }
-      });
+      }
 
       /** At this point, `options` contains only required params. */
       // @ts-ignore We know `option` has `value`
@@ -271,68 +216,167 @@ export class Router {
         url.pathname = url.pathname.replace(`:${name}`, value);
       });
 
-      const response = await handler(new Request(url.href), connInfo, params);
-      reply.data.content = await response.text();
+      // Sends initial response to Discord.
+      // It will be updated from the body stream.
+      message.content = "\r";
 
-      return new Response(JSON.stringify(reply), {
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-        },
+      const response = await handler(new Request(url.href), connInfo, params);
+      response.body!
+        // Accumulates all chunks and enqueue them per second to avoid
+        // rate limiting from Discord.
+        .pipeThrough(new RateLimitStream(rateLimit))
+        .pipeThrough(new TextDecoderStream())
+        .pipeThrough(
+          new TransformStream({
+            async transform(chunk: string, _controller) {
+              chunk = message.content + chunk;
+              // Wraps and trims the message to 2000 characters from the end.
+              message.content = wrapText(chunk).slice(-1 * characterLimit);
+              await edit(token, message);
+            },
+          }),
+        )
+        .pipeThrough(new TextEncoderStream())
+        // Discards
+        .pipeTo(new WritableStream());
+
+      return Response.json({
+        // Type 5 responds with an ACK retaining the user's input at the top.
+        type: InteractionResponseType.ACK_WITH_SOURCE,
+        data: message,
       });
     }
 
     // We will return a bad request error as a valid Discord request
     // shouldn't reach here.
-    return new Response(
-      JSON.stringify({
-        error: "bad request",
-      }),
-      {
-        status: 400,
-        headers: {
-          "Content-Type": "application/json; charset=utf-8",
-        },
-      },
-    );
+    return Response.json({ error: "bad request" }, { status: 400 });
+  };
+}
+
+/**
+ * Creates a partial application command from route URL.
+ */
+function commandFromUri(uri: string | URL): PartialApplicationCommand | null {
+  /** @TODO: Uses decorators for description and option type? */
+  const { pathname, searchParams } = new URL(
+    uri.toString(),
+    "https://example.com",
+  );
+  /** @FIXME: Command name is not always the only one. */
+  const [_, name, ...params] = pathname.split("/");
+
+  if (!NAME_REGEX.test(name)) {
+    console.error(`Invalid command name: ${name}`);
+    return null;
   }
 
-  /**
-   * Verify whether the request is coming from Discord.
-   * When the request's signature is not valid, we return a 401 and this is
-   * important as Discord sends invalid requests to test our verification.
-   */
-  async #validate(
-    request: Request,
-  ): Promise<{ error?: string; status?: number; body?: string }> {
-    const signature = request.headers.get("X-Signature-Ed25519")!;
-    const timestamp = request.headers.get("X-Signature-Timestamp")!;
-    if (!signature) {
-      return { error: `header X-Signature-Ed25519 not available`, status: 400 };
-    }
-    if (!timestamp) {
-      return {
-        error: `header X-Signature-Timestamp not available`,
-        status: 400,
-      };
-    }
+  // Required options must be listed before optional options.
+  const options: ApplicationCommandOption[] = [];
 
-    const body = await request.text();
+  // Params are required options.
+  params.forEach((param) => {
+    const name = param.substring(1);
+    options.push({
+      type: ApplicationCommandOptionType.STRING,
+      name,
+      description: name, /** @FIXME: Actual description */
+      required: true,
+      choices: undefined,
+      // channel_types: undefined,
+      options: undefined,
+      // min_value: undefined,
+      // max_value: undefined,
+      // autocomplete: undefined,
+    });
+  });
 
-    const valid = sign.detached.verify(
-      new TextEncoder().encode(timestamp + body),
-      hexToUint8Array(signature),
-      hexToUint8Array(this.#publicKey),
-    );
+  // Search params are optional options.
+  searchParams.forEach((_defaultValue, name) => {
+    options.push({
+      type: ApplicationCommandOptionType.STRING,
+      name,
+      description: name, /** @FIXME: Actual description */
+      required: false,
+      choices: undefined,
+      // channel_types: undefined,
+      options: undefined,
+      // min_value: undefined,
+      // max_value: undefined,
+      // autocomplete: undefined,
+    });
+  });
 
-    if (!valid) {
-      return { error: "Invalid request", status: 401 };
-    }
+  const command: PartialApplicationCommand = {
+    name,
+    description: name, /** @FIXME: Actual description */
+    options,
+  };
 
-    return { body };
-  }
+  return command;
 }
 
 /** Converts a hexadecimal string to Uint8Array. */
 function hexToUint8Array(hex: string) {
   return new Uint8Array(hex.match(/.{1,2}/g)!.map((val) => parseInt(val, 16)));
+}
+
+/**
+ * A TransformStream that accumulates chunks and enqueues them at a rate.
+ */
+class RateLimitStream extends TransformStream {
+  constructor(rateLimit: number = 500) {
+    let buffer = new Uint8Array(0);
+    let timeout: number | null = null;
+
+    super({
+      transform(chunk, controller) {
+        const newBuffer = new Uint8Array(buffer.length + chunk.length);
+        newBuffer.set(buffer, 0);
+        newBuffer.set(chunk, buffer.length);
+        buffer = newBuffer;
+
+        if (!timeout) {
+          timeout = setTimeout(() => {
+            controller.enqueue(new Uint8Array(buffer));
+            buffer = new Uint8Array(0);
+            timeout = null;
+          }, rateLimit);
+        }
+      },
+      flush(controller) {
+        if (buffer.length > 0) {
+          controller.enqueue(new Uint8Array(buffer));
+          buffer = new Uint8Array(0);
+        }
+      },
+    });
+  }
+}
+
+/**
+ * Wraps text containing line feed and carriage return.
+ */
+function wrapText(text: string) {
+  let result = "";
+  let currentLine = "";
+
+  // Loop through each character in the input string
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    // If we encounter a "\r\n", add the current line to the result and start a new line
+    if (char === "\r" && text[i + 1] === "\n") {
+      result += currentLine + "\r\n";
+      currentLine = "";
+      i++; // skip over the "\n" character
+    } // If we encounter a "\r", clears the current line
+    else if (char === "\r") {
+      currentLine = "";
+    } // If we encounter any other character, add it to the current line
+    else {
+      currentLine += char;
+    }
+  }
+
+  return result + currentLine;
 }
