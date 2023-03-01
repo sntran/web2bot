@@ -56,8 +56,8 @@ For handler that may take time to run, the route handler can return a
 in `Response` body. Each chunks enqueued in there will be used to update the
 response to the interaction.
 
-Some ASCII control characters can be used to cause effects other than the addition
-to the text:
+Some ASCII control characters can be used to cause effects other than the
+addition to the text:
 
 - `\b`: deletes the previous character.
 - `\r\n`: moves cursor to a new line.
@@ -103,10 +103,10 @@ Deno.serve(router({
 
 ### Authorization
 
-All interaction requests have `Authorization` header, which contains
-Basic Authentication with Base64 encoding of the requesting user's ID.
-Handlers that want to restrict usage to certain users can check this
-header and respond accordingly.
+All interaction requests have `Authorization` header, which contains Basic
+Authentication with Base64 encoding of the requesting user's ID. Handlers that
+want to restrict usage to certain users can check this header and respond
+accordingly.
 
 Example:
 

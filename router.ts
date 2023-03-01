@@ -63,7 +63,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
 
     const url = new URL(route, "https://example.com");
     // Creates application command from the route.
-    const command = commandFromUri(url);
+    const command = commandFromUri(url, handler);
     if (command) {
       commands.push(command);
       // Stores the route handler as a property of this instance by command name.
@@ -262,7 +262,10 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
 /**
  * Creates a partial application command from route URL.
  */
-function commandFromUri(uri: string | URL): PartialApplicationCommand | null {
+function commandFromUri(
+  uri: string | URL,
+  handler: Handler,
+): PartialApplicationCommand | null {
   /** @TODO: Uses decorators for description and option type? */
   const { pathname, searchParams } = new URL(
     uri.toString(),
@@ -314,7 +317,7 @@ function commandFromUri(uri: string | URL): PartialApplicationCommand | null {
 
   const command: PartialApplicationCommand = {
     name,
-    description: name, /** @FIXME: Actual description */
+    description: handler.displayName || name,
     options,
   };
 
@@ -373,23 +376,19 @@ function wrapText(text: string) {
     // If we encounter a "\b", remove the last character from the current line
     if (char === "\b") {
       currentLine = currentLine.slice(0, -1);
-    }
-    // If we encounter a "\r\n", add the current line to the result and start a new line
+    } // If we encounter a "\r\n", add the current line to the result and start a new line
     else if (char === "\r" && text[i + 1] === "\n") {
       result += currentLine + "\r\n";
       currentLine = "";
       i++; // skip over the "\n" character
-    }
-    // If we encounter a "\r", clears the current line
+    } // If we encounter a "\r", clears the current line
     else if (char === "\r") {
       currentLine = "";
-    }
-    // If we encounter a form feed "\f", clears the result
+    } // If we encounter a form feed "\f", clears the result
     else if (char === "\f") {
       result = "";
       currentLine = "";
-    }
-    // For any other character, add it to the current line
+    } // For any other character, add it to the current line
     else {
       currentLine += char;
     }
