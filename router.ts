@@ -370,15 +370,26 @@ function wrapText(text: string) {
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
 
+    // If we encounter a "\b", remove the last character from the current line
+    if (char === "\b") {
+      currentLine = currentLine.slice(0, -1);
+    }
     // If we encounter a "\r\n", add the current line to the result and start a new line
-    if (char === "\r" && text[i + 1] === "\n") {
+    else if (char === "\r" && text[i + 1] === "\n") {
       result += currentLine + "\r\n";
       currentLine = "";
       i++; // skip over the "\n" character
-    } // If we encounter a "\r", clears the current line
+    }
+    // If we encounter a "\r", clears the current line
     else if (char === "\r") {
       currentLine = "";
-    } // If we encounter any other character, add it to the current line
+    }
+    // If we encounter a form feed "\f", clears the result
+    else if (char === "\f") {
+      result = "";
+      currentLine = "";
+    }
+    // For any other character, add it to the current line
     else {
       currentLine += char;
     }

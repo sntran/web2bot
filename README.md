@@ -54,12 +54,19 @@ Deno.serve(router({
 For handler that may take time to run, the route handler can return a
 [`ReadableStream`](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream)
 in `Response` body. Each chunks enqueued in there will be used to update the
-response to the interaction. New-line (`\r\n`) and carriage return (`\r`) can be
-used to control the output.
+response to the interaction.
+
+Some ASCII control characters can be used to cause effects other than the addition
+to the text:
+
+- `\b`: deletes the previous character.
+- `\r\n`: moves cursor to a new line.
+- `\f`: clears the message.
+- `\r`: deletes current line.
 
 **Note**: For each interaction, a response can only be updated within 15
 minutes. After that, no further update can be made. Make sure the task run
-within that time frame.
+within that timeframe.
 
 ```ts
 import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
