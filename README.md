@@ -93,3 +93,29 @@ Deno.serve(router({
   },
 }));
 ```
+
+### Authorization
+
+All interaction requests have `Authorization` header, which contains
+Basic Authentication with Base64 encoding of the requesting user's ID.
+Handlers that want to restrict usage to certain users can check this
+header and respond accordingly.
+
+Example:
+
+```ts
+import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+
+Deno.serve(router({
+  // Example with stream response
+  "/": (request) => {
+    const authorization = request.headers.get("Authorization");
+    const [user] = atob(authorization!.split(" ")[1]).split(":");
+    if (user !== "1234567890") {
+      return new Response("Unauthorized");
+    }
+
+    return new Response("Hello");
+  },
+}));
+```

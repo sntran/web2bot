@@ -163,7 +163,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
       } as ApplicationCommandInteractionData,
       // guild_id,
       // channel_id,
-      // member = { user: null },
+      member,
       // user,
       token,
       // version,
@@ -220,7 +220,13 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
       // It will be updated from the body stream.
       message.content = "\r";
 
-      const response = await handler(new Request(url.href), connInfo, params);
+      const newRequest = new Request(url.href, {
+        headers: {
+          "Authorization": "Basic " + btoa(`${member.user.id}:`),
+        },
+      });
+      const response = await handler(newRequest, connInfo, params);
+
       response.body!
         // Accumulates all chunks and enqueue them per second to avoid
         // rate limiting from Discord.
