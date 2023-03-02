@@ -115,7 +115,7 @@ import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/ma
 
 Deno.serve(router({
   // Example with stream response
-  "/": (request) => {
+  "/hello": (request) => {
     const authorization = request.headers.get("Authorization");
     const [user] = atob(authorization!.split(" ")[1]).split(":");
     if (user !== "1234567890") {
@@ -123,6 +123,50 @@ Deno.serve(router({
     }
 
     return new Response("Hello");
+  },
+}));
+```
+
+### AbortSignal
+
+The incoming `Request` has a `.signal` property that would fire "abort" event
+when the interaction is deleted from Discord. The handler is free to use it
+however they want.
+
+Example:
+
+```ts
+import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+
+Deno.serve(router({
+  "/count?from=1&step=1&tick=1000": (request) => {
+    const { searchParams } = new URL(request.url);
+    let timerId: number | undefined;
+    let from = Number(searchParams.get("from"));
+    const step = Number(searchParams.get("step"));
+    const tick = Number(searchParams.get("tick"));
+
+    const body = new ReadableStream({
+      start(controller) {
+        // Cancels timer when interaction is deleted.
+        request.signal.addEventListener("abort", () => {
+          clearInterval(timerId);
+          controller.close();
+        });
+
+        timerId = setInterval(() => {
+          controller.enqueue(encoder.encode(`\r${from}`));
+          from += step;
+        }, tick);
+      },
+      cancel() {
+        if (typeof timerId === "number") {
+          clearInterval(timerId);
+        }
+      },
+    });
+
+    return new Response(body);
   },
 }));
 ```

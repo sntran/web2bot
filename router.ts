@@ -220,14 +220,17 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
       // It will be updated from the body stream.
       message.content = "\r";
 
+      const abortController = new AbortController();
+
       const newRequest = new Request(url.href, {
         headers: {
           "Authorization": "Basic " + btoa(`${member.user.id}:`),
         },
+        signal: abortController.signal,
       });
-      const response = await handler(newRequest, connInfo, params);
+      const { headers, body } = await handler(newRequest, connInfo, params);
 
-      response.body!
+      body!
         // Accumulates all chunks and enqueue them per second to avoid
         // rate limiting from Discord.
         .pipeThrough(new RateLimitStream(rateLimit))
@@ -235,10 +238,19 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
         .pipeThrough(
           new TransformStream({
             async transform(chunk: string, _controller) {
+              if (!chunk) return;
+
               chunk = message.content + chunk;
               // Wraps and trims the message to 2000 characters from the end.
               message.content = wrapText(chunk).slice(-1 * characterLimit);
-              await edit(token, message);
+              const { status, statusText } = await edit(token, message);
+
+              if (status === 404) {
+                // 404: Unknown interaction
+                // This means the user has deleted the interaction.
+                // Signals the handler to abort, but it's up to them to do so.
+                abortController.abort(statusText);
+              }
             },
           }),
         )
