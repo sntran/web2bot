@@ -19,8 +19,23 @@ interface Message {
   id?: Snowflake;
   content: string;
   embeds: never[];
-  components: never[];
+  components: Component[];
   attachments: never[];
+}
+
+interface Component {
+  type: number;
+  custom_id?: string;
+  label?: string;
+  style?: number;
+  emoji?: {
+    id?: Snowflake;
+    name?: string;
+    animated?: boolean;
+  };
+  url?: string;
+  disabled?: boolean;
+  components?: Component[];
 }
 
 export type Handler = (
@@ -149,18 +164,11 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
 
     status = 200;
 
+    const interaction: Interaction = JSON.parse(body!);
     const {
       // id,
-      type = 0,
-      data: {
-        // id,
-        name,
-        options = [],
-      } = {
-        id: "",
-        name: "",
-        options: [],
-      } as ApplicationCommandInteractionData,
+      type,
+      data,
       // guild_id,
       // channel_id,
       member,
@@ -170,7 +178,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
       // message,
       // locale,
       // guild_locale,
-    } = JSON.parse(body!) as Interaction;
+    } = interaction;
 
     // Discord performs Ping interactions to test our application.
     if (type === InteractionType.PING) {
@@ -180,6 +188,11 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     }
 
     if (type === InteractionType.APPLICATION_COMMAND) {
+      const {
+        name,
+        options = [],
+      } = data as ApplicationCommandInteractionData;
+
       const message: Message = {
         content: "",
         embeds: [],
@@ -229,6 +242,47 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
         signal: abortController.signal,
       });
       const { headers, body } = await handler(newRequest, connInfo, params);
+
+      // Displays linked resources as buttons.
+      const components = headers.get("Link")?.split(",").map((linkValue) => {
+        // <uri-reference>; param1=value1; param2="value2"
+        const [target, ...params] = linkValue.split(";");
+        const [_, uri] = target.match(/<([^>]*)>/) || [];
+        const href = decodeURIComponent(uri!);
+        const component: Component = {
+          type: 2, // Button
+          style: 1,
+        };
+        if (href.startsWith("/")) {
+          component.custom_id = href.substring(1);
+        } else {
+          component.url = href;
+          component.style = 5; // Link
+        }
+
+        params.forEach((param) => {
+          param = param.trim();
+          let [key, value = ""] = param.split("=");
+          value = value.trim().replace(/^"(.*)"$/, "$1");
+          if (key === "title") {
+            component.label = value;
+          }
+
+          if (key === "disabled") {
+            component.disabled = true;
+          }
+        });
+
+        return component;
+      }) || [];
+
+      message.components.length = 0;
+      if (components.length) {
+        message.components.push({
+          type: 1, // Action Row, required for buttons.
+          components,
+        });
+      }
 
       body!
         // Accumulates all chunks and enqueue them per second to avoid
