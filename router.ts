@@ -419,6 +419,12 @@ class RateLimitStream extends TransformStream {
         }
       },
       flush(controller) {
+        // Ensures we clear the timeout if the stream is closed early.
+        if (timeout) {
+          clearTimeout(timeout);
+          timeout = null;
+        }
+
         if (buffer.length > 0) {
           controller.enqueue(new Uint8Array(buffer));
           buffer = new Uint8Array(0);
