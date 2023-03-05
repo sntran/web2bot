@@ -60,9 +60,6 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
   const {
     applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
     publicKey = Deno.env.get("DISCORD_PUBLIC_KEY") || "",
-    authToken = Deno.env.get("DISCORD_BOT_TOKEN") || "",
-    tokenPrefix,
-    guildId = Deno.env.get("DISCORD_GUILD_ID"),
     endpoint = "/",
     rateLimit = 1000,
     characterLimit = 2000,
@@ -87,26 +84,36 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
   }
 
   if (!serveOnly) {
-    // Registers the application commands.
-    const endpoint = guildId
-      ? `applications/${applicationId}/guilds/${guildId}/commands`
-      : `applications/${applicationId}/commands`;
-    const headers = {
-      "Authorization": `${(tokenPrefix || "Bot")} ${authToken}`,
-      "Content-Type": "application/json",
-    };
+    registerCommands(commands, options);
+  }
 
-    fetch(`${DISCORD_BASE_URL}/${endpoint}`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify(commands),
-    }).then((response) => {
-      if (!response.ok) {
-        console.error(`Failed to register commands: ${response.statusText}`);
-      } else {
-        console.log("Registered commands");
-      }
-    });
+  async function validate(request: Request): Promise<{ error?: string, body?: string; }> {
+    const error = "Invalid Request";
+
+    if (request.method !== "POST") {
+      return { error };
+    }
+
+    const { pathname } = new URL(request.url);
+    if (pathname !== endpoint) {
+      return { error };
+    }
+
+    const signature = request.headers.get("X-Signature-Ed25519")!;
+    const timestamp = request.headers.get("X-Signature-Timestamp")!;
+    const body = await request.text();
+
+    const valid = await verify(
+      new TextEncoder().encode(timestamp + body),
+      hexToUint8Array(signature),
+      hexToUint8Array(publicKey),
+    );
+
+    if (!valid) {
+      return { error };
+    }
+
+    return { body };
   }
 
   /**
@@ -136,33 +143,10 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     request: Request,
     connInfo: ConnInfo,
   ): Promise<Response> {
-    //#region Request Validation
-    let status = 401;
-    if (request.method !== "POST") {
-      Response.json({ error: "Invalid Request" }, { status });
+    const { error, body } = await validate(request);
+    if (error) {
+      return Response.json({ error }, { status: 401 });
     }
-
-    const { pathname } = new URL(request.url);
-    if (pathname !== endpoint) {
-      return Response.json({ error: "Invalid Request" }, { status });
-    }
-
-    const signature = request.headers.get("X-Signature-Ed25519")!;
-    const timestamp = request.headers.get("X-Signature-Timestamp")!;
-    const body = await request.text();
-
-    const valid = await verify(
-      new TextEncoder().encode(timestamp + body),
-      hexToUint8Array(signature),
-      hexToUint8Array(publicKey),
-    );
-
-    if (!valid) {
-      return Response.json({ error: "Invalid Request" }, { status });
-    }
-    //#endregion Request Validation
-
-    status = 200;
 
     const interaction: Interaction = JSON.parse(body!);
     const {
@@ -323,6 +307,43 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     // shouldn't reach here.
     return Response.json({ error: "bad request" }, { status: 400 });
   };
+}
+
+export async function registerCommands(commands: PartialApplicationCommand[], options: Options = {}) {
+  const {
+    applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
+    authToken = Deno.env.get("DISCORD_BOT_TOKEN") || "",
+    tokenPrefix,
+    guildId = Deno.env.get("DISCORD_GUILD_ID"),
+  } = options;
+
+  if (!guildId || !authToken) {
+    return;
+  }
+
+  const guildIds = guildId.split(",");
+
+  for await (const guildId of guildIds) {
+    const endpoint = guildId
+      ? `applications/${applicationId}/guilds/${guildId}/commands`
+      : `applications/${applicationId}/commands`;
+    const headers = {
+      "Authorization": `${(tokenPrefix || "Bot")} ${authToken}`,
+      "Content-Type": "application/json",
+    };
+
+    await fetch(`${DISCORD_BASE_URL}/${endpoint}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(commands),
+    }).then((response) => {
+      if (!response.ok) {
+        console.error(`Failed to register commands in guild ${guildId}: ${response.statusText}`);
+      } else {
+        console.log(`Registered commands in guild ${guildId}`);
+      }
+    });
+  }
 }
 
 /**
