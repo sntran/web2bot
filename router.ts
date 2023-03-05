@@ -3,17 +3,66 @@ import {
   ApplicationCommandOption,
   ApplicationCommandOptionType,
   ConnInfo,
-  Interaction,
   InteractionResponseType,
   InteractionType,
   PartialApplicationCommand,
   verify,
-  Snowflake,
 } from "./deps.ts";
 
 const DISCORD_BASE_URL = "https://discord.com/api/v10";
 
 const NAME_REGEX = /^[-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$/u;
+
+export type Snowflake = string;
+
+export type Interaction = {
+  id: Snowflake;
+  application_id: Snowflake;
+  type: Exclude<InteractionType, InteractionType.APPLICATION_COMMAND>;
+  data?: ApplicationCommandInteractionData;
+  guild_id?: Snowflake;
+  channel_id?: Snowflake;
+  member?: GuildMember;
+  user?: User;
+  token: string;
+  version: number;
+  message: Message;
+  locale: string;
+  guild_locale: string;
+};
+
+export type GuildMember = {
+  user?: User;
+  nick?: string;
+  avatar?: string;
+  roles: Snowflake[];
+  joined_at: Date;
+  premium_since?: Date;
+  deaf: boolean;
+  mute: boolean;
+  flags: number;
+  pending?: boolean;
+  permissions?: string;
+  communication_disabled_until?: Date;
+};
+
+export type User = {
+  id: Snowflake;
+  username: string;
+  discriminator: string;
+  avatar: string;
+  bot?: boolean;
+  system?: boolean;
+  mfa_enabled?: boolean;
+  banner?: string;
+  accent_color?: number;
+  locale?: string;
+  verified?: boolean;
+  email?: string;
+  flags?: number;
+  premium_type?: number;
+  public_flags?: number;
+};
 
 interface Message {
   id?: Snowflake;
@@ -160,8 +209,8 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
       token,
       // version,
       // message,
-      // locale,
-      // guild_locale,
+      locale,
+      guild_locale,
     } = interaction;
 
     // Discord performs Ping interactions to test our application.
@@ -221,7 +270,8 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
 
       const newRequest = new Request(url.href, {
         headers: {
-          "Authorization": "Basic " + btoa(`${member.user.id}:`),
+          "Authorization": "Basic " + btoa(`${member!.user!.id}:`),
+          "Accept-Language": `${locale},${guild_locale};q=0.9`,
         },
         signal: abortController.signal,
       });

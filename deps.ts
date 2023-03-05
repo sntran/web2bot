@@ -14,7 +14,5 @@ export type {
   ApplicationCommand,
   ApplicationCommandInteractionData,
   ApplicationCommandOption,
-  Interaction,
   PartialApplicationCommand,
-  Snowflake,
 } from "https://deno.land/x/discord_slash_commands@1.0.8/src/structures/index.ts";
