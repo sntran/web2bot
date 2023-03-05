@@ -2,7 +2,7 @@ export type { ConnInfo } from "https://deno.land/std@0.177.0/http/server.ts";
 
 // TweetNaCl is a cryptography library that we use to verify requests
 // from Discord.
-export { sign } from "https://cdn.skypack.dev/tweetnacl@v1.0.3?dts";
+export { verify } from "npm:watsign@0.1";
 
 export {
   ApplicationCommandOptionType,

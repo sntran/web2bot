@@ -7,7 +7,7 @@ import {
   InteractionResponseType,
   InteractionType,
   PartialApplicationCommand,
-  sign,
+  verify,
   Snowflake,
 } from "./deps.ts";
 
@@ -151,7 +151,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     const timestamp = request.headers.get("X-Signature-Timestamp")!;
     const body = await request.text();
 
-    const valid = sign.detached.verify(
+    const valid = await verify(
       new TextEncoder().encode(timestamp + body),
       hexToUint8Array(signature),
       hexToUint8Array(publicKey),
