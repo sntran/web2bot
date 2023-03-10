@@ -9,7 +9,8 @@ import {
   verify,
 } from "./deps.ts";
 
-const DISCORD_BASE_URL = "https://discord.com/api/v10";
+const DISCORD_API_VERSION = Deno.env.get("DISCORD_API_VERSION");
+const DISCORD_BASE_URL = `https://discord.com/api${DISCORD_API_VERSION ? `/v${DISCORD_API_VERSION}` : ""}`;
 
 const NAME_REGEX = /^[-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$/u;
 
