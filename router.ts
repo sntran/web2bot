@@ -128,7 +128,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     serveOnly = false,
   } = options;
 
-  const commands = [];
+  const commands: PartialApplicationCommand[] = [];
   const handlers: Record<string, Handler> = {};
 
   for (const [route, handler] of Object.entries(routes)) {
@@ -216,6 +216,34 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     request: Request,
     connInfo: ConnInfo,
   ): Promise<Response> {
+    // Routing web requests first.
+    for (const { name, options = [] } of commands) {
+      let pathname = `/${name}`;
+      const searchParams: string[] = [];
+
+      options.forEach((option) => {
+        if (option.required) {
+          pathname += `/:${option.name}`;
+        } else {
+          searchParams.push(`{${option.name}=:${option.name}}?`);
+        }
+      });
+      const pattern = new URLPattern({
+        pathname,
+        search: searchParams.join("&"),
+      });
+
+      if (pattern.test(request.url)) {
+        const params: Record<string, string> = {};
+        const groups = pattern.exec(request.url)?.pathname.groups || {};
+        for (const [key, value] of Object.entries(groups)) {
+          params[key] = value!;
+        }
+        const response = await handlers[name](request, connInfo, params);
+        return response;
+      }
+    }
+
     const { error, body } = await validate(request);
     if (error) {
       return Response.json({ error }, { status: 401 });

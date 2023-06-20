@@ -7,6 +7,8 @@ slash commands are registered with Discord automatically, unless specified not
 to. The associated handler with the route is called whenever the command is
 used. The handler can use any of the web APIs to respond to the interaction.
 
+All the routes can also be accessed via HTTP for quick testing the handler.
+
 ## Usage
 
 The main export has the following signature:
