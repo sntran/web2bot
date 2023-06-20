@@ -1,11 +1,11 @@
-# hack-n-slash
+# web2bot
 
-Hack your way with any number of slash commands for Discord.
+Uses web technologies to build Discord bots.
 
 This library provides a router that maps endpoints to slash commands. All routed
 slash commands are registered with Discord automatically, unless specified not
 to. The associated handler with the route is called whenever the command is
-used.
+used. The handler can use any of the web APIs to respond to the interaction.
 
 ## Usage
 
@@ -36,7 +36,7 @@ interface Options {
 The route handler just needs to return a `Response` with a string body.
 
 ```ts
-import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+import { router } from "https://raw.githubusercontent.com/sntran/web2bot/main/mod.ts";
 
 Deno.serve(router({
   // Example Hello World with both required and optional options.
@@ -69,7 +69,7 @@ minutes. After that, no further update can be made. Make sure the task run
 within that timeframe.
 
 ```ts
-import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+import { router } from "https://raw.githubusercontent.com/sntran/web2bot/main/mod.ts";
 
 Deno.serve(router({
   // Example with stream response
@@ -111,7 +111,7 @@ accordingly.
 Example:
 
 ```ts
-import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+import { router } from "https://raw.githubusercontent.com/sntran/web2bot/main/mod.ts";
 
 Deno.serve(router({
   // Example with stream response
@@ -136,7 +136,7 @@ however they want.
 Example:
 
 ```ts
-import { router } from "https://raw.githubusercontent.com/sntran/hack-n-slash/main/mod.ts";
+import { router } from "https://raw.githubusercontent.com/sntran/web2bot/main/mod.ts";
 
 Deno.serve(router({
   "/count?from=1&step=1&tick=1000": (request) => {
@@ -167,6 +167,37 @@ Deno.serve(router({
     });
 
     return new Response(body);
+  },
+}));
+```
+
+### Attachment
+
+The handler can return a `Response` with a `Content-Disposition` header to
+attach the body as a file.
+
+Because the whole body is sent as a file, there can only be one attachment.
+
+Example:
+
+```ts
+import { router } from "https://raw.githubusercontent.com/sntran/web2bot/main/mod.ts";
+
+Deno.serve(router({
+  // Example Hello World with both required and optional options.
+  "/fetch/:url?name=": (req, _connInfo, params) => {
+    const { searchParams } = new URL(request.url);
+    const filename = searchParams.get("name") ?? "attachment";
+
+    const response = await fetch(url);
+    const headers = new Headers(response.headers);
+    if (!headers.has("Content-Disposition")) {
+      headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+    }
+
+    return new Response(response.body, {
+      headers,
+    });
   },
 }));
 ```

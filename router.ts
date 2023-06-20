@@ -10,7 +10,9 @@ import {
 } from "./deps.ts";
 
 const DISCORD_API_VERSION = Deno.env.get("DISCORD_API_VERSION");
-const DISCORD_BASE_URL = `https://discord.com/api${DISCORD_API_VERSION ? `/v${DISCORD_API_VERSION}` : ""}`;
+const DISCORD_BASE_URL = `https://discord.com/api${
+  DISCORD_API_VERSION ? `/v${DISCORD_API_VERSION}` : ""
+}`;
 
 const NAME_REGEX = /^[-_\p{L}\p{N}\p{sc=Deva}\p{sc=Thai}]{1,32}$/u;
 
@@ -70,7 +72,7 @@ interface Message {
   content: string;
   embeds: never[];
   components: Component[];
-  attachments: never[];
+  attachments: Partial<Attachment>[];
 }
 
 interface Component {
@@ -86,6 +88,16 @@ interface Component {
   url?: string;
   disabled?: boolean;
   components?: Component[];
+}
+
+interface Attachment {
+  id: Snowflake;
+  filename: string;
+  description?: string;
+  content_type?: string;
+  size: number;
+  url: string;
+  ephemeral?: boolean;
 }
 
 export type Handler = (
@@ -123,7 +135,7 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     // Ensures the handler's name is the route.
     Object.defineProperty(handler, "name", { value: route });
 
-    const url = new URL(route, "https://example.com");
+    const url = new URL(route, "http://localhost");
     // Creates application command from the route.
     const command = commandFromUri(url, handler);
     if (command) {
@@ -137,7 +149,9 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
     registerCommands(commands, options);
   }
 
-  async function validate(request: Request): Promise<{ error?: string, body?: string; }> {
+  async function validate(
+    request: Request,
+  ): Promise<{ error?: string; body?: string }> {
     const error = "Invalid Request";
 
     if (request.method !== "POST") {
@@ -171,7 +185,16 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
    * @param token Interaction token
    * @param message The message to edit. If no ID is provided, the original response is edited.
    */
-  function edit(token: string, message: Message) {
+  function edit(token: string, message: Message | FormData) {
+    if (message instanceof FormData) {
+      return fetch(
+        `${DISCORD_BASE_URL}/webhooks/${applicationId}/${token}/messages/@original`,
+        {
+          method: "PATCH",
+          body: message,
+        },
+      );
+    }
     const {
       id = "@original",
       ...data
@@ -276,7 +299,8 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
         },
         signal: abortController.signal,
       });
-      const { headers, body } = await handler(newRequest, connInfo, params);
+      const response = await handler(newRequest, connInfo, params);
+      const { headers, body } = response;
 
       // Displays linked resources as buttons.
       const components = headers.get("Link")?.split(",").map((linkValue) => {
@@ -316,6 +340,43 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
         message.components.push({
           type: 1, // Action Row, required for buttons.
           components,
+        });
+      }
+
+      const [attachment, filename] = headers.get("Content-Disposition")?.match(
+        /attachment(?:;\s+filename="(.*)")?/,
+      ) || [];
+
+      if (attachment) {
+        response.blob().then(async (blob) => {
+          message.attachments.push({
+            id: "0",
+            filename,
+            content_type: headers.get("Content-Type") || "",
+            size: Number(headers.get("Content-Length")),
+            url: response.url,
+            ephemeral: true,
+          });
+
+          const formData = new FormData();
+          formData.append("payload_json", JSON.stringify(message));
+          formData.append("files[0]", blob, filename);
+
+          const { status, statusText } = await edit(token, formData);
+
+          if (status === 404) {
+            // 404: Unknown interaction
+            // This means the user has deleted the interaction.
+            // Signals the handler to abort, but it's up to them to do so.
+            abortController.abort(statusText);
+          }
+        });
+
+        // ACK the interaction with a message and we will update it with the attachment later.
+        return Response.json({
+          // Type 5 responds with an ACK retaining the user's input at the top.
+          type: InteractionResponseType.ACK_WITH_SOURCE,
+          data: message,
         });
       }
 
@@ -360,7 +421,10 @@ export function router(routes: Record<string, Handler>, options: Options = {}) {
   };
 }
 
-export async function registerCommands(commands: PartialApplicationCommand[], options: Options = {}) {
+export async function registerCommands(
+  commands: PartialApplicationCommand[],
+  options: Options = {},
+) {
   const {
     applicationId = Deno.env.get("DISCORD_APPLICATION_ID") || "",
     authToken = Deno.env.get("DISCORD_BOT_TOKEN") || "",
@@ -389,7 +453,9 @@ export async function registerCommands(commands: PartialApplicationCommand[], op
       body: JSON.stringify(commands),
     }).then((response) => {
       if (!response.ok) {
-        console.error(`Failed to register commands in guild ${guildId}: ${response.statusText}`);
+        console.error(
+          `Failed to register commands in guild ${guildId}: ${response.statusText}`,
+        );
       } else {
         console.log(`Registered commands in guild ${guildId}`);
       }
@@ -403,18 +469,18 @@ export async function registerCommands(commands: PartialApplicationCommand[], op
 function commandFromUri(
   uri: string | URL,
   handler: Handler,
-): PartialApplicationCommand | null {
+): PartialApplicationCommand | undefined {
   /** @TODO: Uses decorators for description and option type? */
   const { pathname, searchParams } = new URL(
     uri.toString(),
-    "https://example.com",
+    "http://localhost",
   );
   /** @FIXME: Command name is not always the only one. */
-  const [_, name, ...params] = pathname.split("/");
+  const [, name, ...params] = pathname.split("/");
 
   if (!NAME_REGEX.test(name)) {
     console.error(`Invalid command name: ${name}`);
-    return null;
+    return;
   }
 
   // Required options must be listed before optional options.
